@@ -16,7 +16,6 @@
 
 % Definizione della classe senza parti (field o method).
 def_class(Class, Parents) :-
-
 atom(Class), 
 is_list(Parents),
 % Verifica che tutti gli elementi di Parents siano atomi.
@@ -26,7 +25,6 @@ assertz(class(Class, Parents)).
 
 % Definizione della classe con parti specificate (field o method).
 def_class(Class, Parents, Parts) :-
-
 atom(Class), % Class è un atomo
 is_list(Parents), % Parents è una lista
 % Verifica che tutti gli elementi di Parents siano atomi.
