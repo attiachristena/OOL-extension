@@ -25,8 +25,8 @@ assertz(class(Class, Parents)).
 
 % Definizione della classe con parti specificate (field o method).
 def_class(Class, Parents, Parts) :-
-atom(Class), % Class è un atomo
-is_list(Parents), % Parents è una lista
+atom(Class), 
+is_list(Parents), 
 % Verifica che tutti gli elementi di Parents siano atomi.
 all_atoms(Parents),
 % Si assicura che Parts sia una lista valida di parti (field o method).
