@@ -7,7 +7,7 @@
 :- dynamic class/3.
 :- field/4,
    method/4,
-   cinstance/2.
+   instance/2.
 
 
 
