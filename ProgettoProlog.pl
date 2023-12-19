@@ -30,13 +30,13 @@ is_list(Parents),
 % Verifica che tutti gli elementi di Parents siano atomi.
 all_atoms(Parents),
 % Si assicura che Parts sia una lista valida di parti (field o method).
-process_parts(Parts),
+process_parts(Class, Parts),
 % Memorizza la classe nella base di conoscenza di Prolog con le parti specificate.
 assertz(class(Class, Parents, Parts)).
 
 
 % process_parts: Processa le parti di una classe (fields o methods)
-process_parts(_, _).
+process_parts(_, []).
 process_parts(Class, [Part|Rest]) :-
     process_part(Class, Part),
     process_parts(Class, Rest).
