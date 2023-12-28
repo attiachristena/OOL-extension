@@ -1,167 +1,139 @@
-%%% -*- Mode: Prolog -*-
-%%% oop.pl
-%%% Attia Christena Mat 894887
-
-% Predicati dinamici per definire le classi.
-:- dynamic class/2.
-:- dynamic class/3.
-:- dynamic field/4,
-   method/4,
-   instance/2.
+% Definizione delle classi e delle istanze
+:- dynamic class/3, instance/3, field/2.
 
 
-
-
-% Predicato def_class per definire la struttura di una classe in OOΠ.
-
-% def_class/2: definizione della classe senza parti (field o method).
+% Predicato per definire una classe
 def_class(ClassName, Parents) :-
-   atom(ClassName), 
-   is_list(Parents),
-% Verifica che tutti gli elementi di Parents siano atomi.
-   atom_list(Parents),
-% Memorizza la classe nella base di conoscenza di Prolog
-   assertz(class(ClassName, Parents)).
-%%%%%%%%%%%%%%%%%%findall e bagof
+    atom(ClassName),
+   % atom(Parents),
+    is_list(Parents),
+   % has_parents(ClassName, Parents),
+    atom_list(Parents),
+    assertz(class(ClassName, Parents, [])).
 
-% def_class/3: definizione della classe con parti specificate (field o method).
 def_class(ClassName, Parents, Parts) :-
-   atom(ClassName),
-   is_list(Parents),
-% Verifica che tutti gli elementi di Parents siano atomi.
-   atom_list(Parents),
-% Si assicura che Parts sia una lista valida di parti (field o method).
-   valid_parts(Parts),
-% Memorizza la classe nella base di conoscenza di Prolog.
-   assertz(class(ClassName, Parents, Parts)).
+    atom(ClassName),
+    is_list(Parents),
+    maplist(is_class, Parents),
+    atom_list(Parents),
+    is_list(Parts),
+    valid_parts(Parts),
+    assertz(class(ClassName, Parents, Parts)).
+
+% Verifica se una classe ha i genitori
+has_parents(ClassName, Parents) :-
+     class(ClassName, ActualParents, _),
+    subset(Parents, ActualParents).
 
 % Verifica che tutti gli elementi di una lista siano atomi.
 atom_list([]).
 atom_list([H | T]) :-
    atom(H),
-   all_atoms(T).
+   atom_list(T).
 
-   
-valid_parts([]).
-valid_parts([Part|Rest]) :-
-    (valid_field(Part)
-    ;
-     valid_method(Part)),
+valid_parts(_).
+valid_parts([Field|Rest]) :-
+    valid_part(Field),
     valid_parts(Rest).
 
-% valid_field/2 :validazione di un campo con due argomenti
-valid_field(field(FieldName, Value)) :-
+valid_part(field(FieldName, Value)) :-
     atom(FieldName),
-    ground(Value), % Verifica se il valore è istanziato
-    !. % Utilizzo del cut per evitare backtracking indesiderato
+    assertz(field(FieldName, Value)).
 
-% valid_field/3: validazione di un campo con tre argomenti
-valid_field(field(FieldName, Value, Type)) :-
+valid_part(field(FieldName, Value, Type)) :-
     atom(FieldName),
-    ground(Value), % Verifica se il valore è istanziato
-    (var(Type)
-    ;
-    atom(Type)),
-    !. % Utilizzo del cut per evitare backtracking indesiderato
-
-% Se la struttura non è conforme ai due metodi precedenti, la regola fallisce.
-valid_field(Field) :-
-    format("Errore: Il campo ~w non è valido.~n", [Field]),
-    fail.
-
-% Validazione di un metodo
-valid_method(method(MethodName, ArgList, Form)) :-
-    atom(MethodName),
-    is_prolog_list(ArgList),
-    is_prolog_form(Form),
-    !. % Utilizzo del cut per evitare backtracking indesiderato
-
-% Se la struttura non è conforme al metodo precedente, la regola fallisce
-valid_method(Method) :-
-    format("Errore: Il metodo ~w non è valido.~n", [Method]),
-    fail.
-
-% Verifica se un termine è una congiunzione di predicati Prolog
-is_prolog_form(Form) :-
-    is_list(Form),
-    maplist(prolog_predicate, Form).
-
-% Verifica se un termine è una lista standard Prolog
-is_prolog_list(List) :-
-    is_list(List),
-    maplist(ground, List). 
-
-% Verifica se un termine è un predicato Prolog
-prolog_predicate(Predicate) :-
-    functor(Predicate, Functor, _),
-    atom(Functor).
-
-% make/2: Creazione di una nuova istanza di una classe
-make(InstanceName, ClassName) :-
-    make_instance(InstanceName, ClassName, []).
-
-% make/3: Creazione di una nuova istanza di una classe con campi specificati
-make(InstanceName, ClassName, FieldList) :-
-    make_instance(InstanceName, ClassName, FieldList).
-
-% make_instance/3: Implementazione della creazione di un'istanza
-make_instance(Instance, Class, FieldList) :-
-    assertz(instance(Instance, Class)),
-    process_field_list(Instance, FieldList).
-
-% process_field_list/2: Processa la lista di campi e asserisce i fatti
-process_field_list(_, []).
-process_field_list(Instance, [Field=FieldValue|Rest]) :-
-    assertz(field(Instance, Field, FieldValue, _Type)),
-    process_field_list(Instance, Rest).
-
-% is_class/1: Verifica se un atomo è il nome di una classe
-is_class(Class) :-
-    class(Class, _).
-
-% is_instance/1: Verifica se un termine è un'istanza qualunque
-is_instance(Value) :-
-    instance(Value, _).
-
-% is_instance/2: Verifica se un termine è un'istanza di una classe specifica
-is_instance(Value, ClassName) :-
-    atom(ClassName),
-    instance(Instance, ClassName).
-
-% inst/2: Recupera un'istanza dato il nome con cui è stata creata
-inst(InstanceName, Instance) :-
-    instance(InstanceName, Instance).
-
-% field/3: Estrae il valore di un campo da una classe
-field(Instance, FieldName, Result) :-
-    field(Instance, FieldName, Result, _Type).
-
-% fieldx/3: Estrae il valore da una classe percorrendo una catena di attributi
-fieldx(Instance, FieldNames, Result) :-
-    fieldx_recursive(Instance, FieldNames, Result).
-
-% fieldx_recursive/3: Implementazione di fieldx
-fieldx_recursive(Instance, [FieldName], Result) :-
-    field(Instance, FieldName, Result, _Type).
-fieldx_recursive(Instance, [FieldName|Rest], Result) :-
-    field(Instance, FieldName, NextInstance, _Type),
-    fieldx_recursive(NextInstance, Rest, Result).
-
+    var(Type),
+    assertz(field(FieldName, Value, Type)).
     
+           
+           
+
+% Predicato per definire un campo di una classe
+fields(Class, FieldName, Value) :-
+    assertz(field(Class, FieldName, Value, _Type)).
+
+fields(Class, FieldName, Value, Type) :-
+    assertz(field(Class, FieldName, Value, Type)).
+
+% Predicato per definire una istanza di una classe
+make(Instance, ClassName, []) :-
+    % Associa o unifica il nome della istanza con un nuovo termine vuoto
+    (atom(Instance) ; var(Instance)), !,
+    assertz(instance(Instance, ClassName, [])).
+
+make(Instance, ClassName, [Field=FieldValue | Rest]) :-
+    % Associa o unifica il nome della istanza con un nuovo termine che rappresenta la istanza
+    (atom(Instance) ; var(Instance)), !,
+    assertz(instance(Instance, ClassName, [Field=FieldValue | Rest])),
+    make_fields(Instance, [Field=FieldValue | Rest]).
 
 
+% Predicato ausiliario per gestire i campi della istanza
+make_fields(_, []).
+make_fields(Instance, [Field=FieldValue | Rest]) :-
+    % Associa o unifica i campi della istanza con i valori forniti
+    assertz(field(Instance, Field, FieldValue, _)),
+    make_fields(Instance, Rest).
 
+% Predicato per verificare se un atomo è il nome di una classe
+is_class(Class) :-
+    atom(Class),
+    class(Class, _, _).
 
+% Predicato per verificare se un termine è un'istanza di una classe
+is_instance(Value) :-
+    nonvar(Value),
+    instance(Value, _, _).
 
+% Predicato per verificare se un termine è un'istanza di una classe specifica
+is_instance(Value, ClassName) :-
+    nonvar(Value),
+    atom(ClassName),
+    instance(Value, Class, _),
+    is_subclass(Class, ClassName).
 
+% Predicato ausiliario per verificare la gerarchia delle classi
+is_subclass(ClassName, ClassName).
+is_subclass(ClassName, SuperClassName) :-
+    class(ClassName, Parents, _),
+    member(Parent, Parents),
+    is_subclass(Parent, SuperClassName).
 
+% Predicato per recuperare un'istanza dato il nome
+inst(InstanceName, Instance) :-
+    atom(InstanceName),
+    instance(InstanceName, _, Fields),
+    build_instance(Fields, Instance).
 
+% Predicato ausiliario per costruire l'istanza a partire dai campi
+build_instance([], []).
+build_instance([Field=FieldValue | RestFields], [Field=FieldValue | RestInstance]) :-
+    build_instance(RestFields, RestInstance).
 
+% Predicato per estrarre il valore di un campo da una classe
+field(Instance, FieldName, Result) :-
+    atom(Instance),
+    atom(FieldName),
+    instance(Instance, Class, _),
+    get_field_value(Class, FieldName, Result).
 
+% Predicato ausiliario per ottenere il valore di un campo dalla classe o dai suoi antenati
+get_field_value(Class, FieldName, Result) :-
+    (field(Class, FieldName, Result, _Type) ;   % Campo presente nella classe corrente
+     class(Class, Parents, _),                   % Ricerca ricorsiva nelle superclassi
+     member(Parent, Parents),
+     get_field_value(Parent, FieldName, Result)).
 
+% Predicato per estrarre il valore da una classe percorrendo una catena di attributi
+fieldx(Instance, FieldNames, Result) :-
+    atom(Instance),
+    is_list(FieldNames),
+    get_nested_field_value(Instance, FieldNames, Result).
 
+% Predicato ausiliario per ottenere il valore di un campo da una sequenza di attributi
+get_nested_field_value(Instance, [FieldName], Result) :-
+    field(Instance, FieldName, Result, _).
 
-
-
-
-
+get_nested_field_value(Instance, [FirstFieldName | RestFieldNames], Result) :-
+    field(Instance, FirstFieldName, NextInstance, _),
+    get_nested_field_value(NextInstance, RestFieldNames, Result).
