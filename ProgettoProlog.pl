@@ -44,8 +44,6 @@ valid_part(field(FieldName, Value, Type)) :-
     atom(FieldName),
     var(Type),
     assertz(field(FieldName, Value, Type)).
-    
-           
            
 
 % Predicato per definire un campo di una classe
@@ -55,23 +53,26 @@ fields(Class, FieldName, Value) :-
 fields(Class, FieldName, Value, Type) :-
     assertz(field(Class, FieldName, Value, Type)).
 
-% Predicato per definire una istanza di una classe
+    make(InstanceName, ClassName):-
+    make(InstanceName, ClassName, []).
+    
+% Predicato per definire un'istanza di una classe
 make(Instance, ClassName, []) :-
-    % Associa o unifica il nome della istanza con un nuovo termine vuoto
+    % Associa o unifica il nome dell'istanza con un nuovo termine vuoto
     (atom(Instance) ; var(Instance)), !,
     assertz(instance(Instance, ClassName, [])).
 
 make(Instance, ClassName, [Field=FieldValue | Rest]) :-
-    % Associa o unifica il nome della istanza con un nuovo termine che rappresenta la istanza
+    % Associa o unifica il nome dell'istanza con un nuovo termine che rappresenta l'istanza
     (atom(Instance) ; var(Instance)), !,
     assertz(instance(Instance, ClassName, [Field=FieldValue | Rest])),
     make_fields(Instance, [Field=FieldValue | Rest]).
 
 
-% Predicato ausiliario per gestire i campi della istanza
+% Predicato ausiliario per gestire i campi dell'istanza
 make_fields(_, []).
 make_fields(Instance, [Field=FieldValue | Rest]) :-
-    % Associa o unifica i campi della istanza con i valori forniti
+    % Associa o unifica i campi dell'istanza con i valori forniti
     assertz(field(Instance, Field, FieldValue, _)),
     make_fields(Instance, Rest).
 
@@ -110,30 +111,17 @@ build_instance([], []).
 build_instance([Field=FieldValue | RestFields], [Field=FieldValue | RestInstance]) :-
     build_instance(RestFields, RestInstance).
 
-% Predicato per estrarre il valore di un campo da una classe
+% field/3: Estrae il valore di un campo da una classe
 field(Instance, FieldName, Result) :-
-    atom(Instance),
-    atom(FieldName),
-    instance(Instance, Class, _),
-    get_field_value(Class, FieldName, Result).
+    field(Instance, FieldName, Result, _Type).
 
-% Predicato ausiliario per ottenere il valore di un campo dalla classe o dai suoi antenati
-get_field_value(Class, FieldName, Result) :-
-    (field(Class, FieldName, Result, _Type) ;   % Campo presente nella classe corrente
-     class(Class, Parents, _),                   % Ricerca ricorsiva nelle superclassi
-     member(Parent, Parents),
-     get_field_value(Parent, FieldName, Result)).
-
-% Predicato per estrarre il valore da una classe percorrendo una catena di attributi
+% fieldx/3: Estrae il valore da una classe percorrendo una catena di attributi
 fieldx(Instance, FieldNames, Result) :-
-    atom(Instance),
-    is_list(FieldNames),
-    get_nested_field_value(Instance, FieldNames, Result).
+    fieldx_recursive(Instance, FieldNames, Result).
 
-% Predicato ausiliario per ottenere il valore di un campo da una sequenza di attributi
-get_nested_field_value(Instance, [FieldName], Result) :-
-    field(Instance, FieldName, Result, _).
-
-get_nested_field_value(Instance, [FirstFieldName | RestFieldNames], Result) :-
-    field(Instance, FirstFieldName, NextInstance, _),
-    get_nested_field_value(NextInstance, RestFieldNames, Result).
+% fieldx_recursive/3: Implementazione di fieldx
+fieldx_recursive(Instance, [FieldName], Result) :-
+    field(Instance, FieldName, Result, _Type).
+fieldx_recursive(Instance, [FieldName|Rest], Result) :-
+    field(Instance, FieldName, NextInstance, _Type),
+    fieldx_recursive(NextInstance, Rest, Result).a
