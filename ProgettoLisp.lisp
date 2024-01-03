@@ -63,8 +63,80 @@
     (t
      (error "Errore: parte invalida"))))
 
+;; Function to check if a symbol is a class
+(defun is-class (name)
+  "Restituisce T se l'atomo passato è il nome di una classe."
+  (and (listp name)
+       (eq (car name) 'is-class)
+       (symbolp (cadr name))))
+
+
+;; Function to check if an object is an instance of a class
+(defun is-instance (object &optional class-name)
+  (cond
+    ((eq class-name 'T) t)  ;; If class-name is T, any instance is considered valid
+    ((and (is-class class-name) (typep object (symbol-value class-name))) t)
+    (t nil)))
+
+
+	
+ (defun make (class-name &rest fields)
+  "Crea un'istanza della classe con i campi specificati."
+  (cond ((not (is-class class-name))
+         nil)
+        (t
+         (list 'oolinst
+               class-name
+               (field-structure (check-method (check-slot-exists class-name fields)))))))
+
+
+(defun field-structure (fields)
+  (cond ((= (list-length fields) 0) nil)
+        ((member (car fields) (get-method-names (check-method fields)))
+         (cons (list (car fields)
+                     '=> 
+                     (process-method (car fields) (caddr fields)))
+               (field-structure (cdddr fields))))
+        (t (cons (list (car fields) (cadr fields))
+                 (field-structure (cddr fields))))))
+
+;;; check-method: estrae i metodi dai vari fields passati 
+;;; come argomento elementi e li restituisce in una cons.
+(defun check-method (fields) 
+  "Estrae i metodi dai fields."
+  (cond ((null fields) nil) 
+        ((and (listp (caddr fields)) (member '=> (caddr fields))) 
+         (cons (cadr fields) 
+               (cons (caddr fields) (check-method (cdddr fields)))))
+        (t (check-method (cddr fields)))))
+
+;;; get-method-names: dato in input una lista che contiene metodi, estrae
+;;; e restituisce come cons solo i nomi del metodo senza il corpo.
+(defun get-method-names (methods)
+  "Restituisce una lista contenente solo i nomi dei metodi."
+  (cond ((null methods) nil) 
+        (t (cons (car methods) (get-method-names (cddr methods))))))
 
   
+
+
+
+
+
+
+	   
+
+
+     
+
+
+
+
+
+
+
+
+
     
   
     
