@@ -1,15 +1,15 @@
 ;;;; Attia Christena 894887
 
 ;; Istanzia la hash-table
-(defparameter *class-prop* (make-hash-table))
+(defparameter *class-specs* (make-hash-table))
 
 ;; Definisce gli attributi delle hash-table
-(defun set-hash (name class-spec)
-  (setf (gethash name *class-prop*) class-spec))
+(defun add-class-spec (name class-spec)
+  (setf (gethash name *class-specs*) class-spec))
 
 ;; Ritorna il valore definito precedentemente					
-(defun get-hash (name)
-  (gethash name *class-prop*))
+(defun class-spec (name)
+  (gethash name *class-specs*))
 
 ;; Controlla che esistano i genitori
 (defun parents-exist (parents)
@@ -31,11 +31,11 @@
 	    (equal '() class-name))
 	(not (symbolp class-name))
 	(error "Errore: il nome della classe non è valido.")))
-    ((class-exists class-name)
+    ((class-spe class-name)
      (error "Errore: la classe ~a esiste già." class-name))
     (t
      ;; Creazione della classe e aggiunta dei genitori
-     (setf (gethash class-name *class-prop*) (cons class-name parents))
+     (setf (class-spec class-name) (cons class-name parents))
      ;; Chiamata alla funzione ausiliaria per definire i campi e i metodi
      (def-class-fields class-name (rest parts))))
   ;; Ritorna il nome della classe 
@@ -49,14 +49,14 @@
     ((null parts) nil)
     ;; Se la prima parte è 'fields', aggiunge i campi alla classe
     ((eq (first (first parts)) 'fields)
-     (setf (gethash class-name *class-prop*)
-           (append (gethash class-name *class-prop*) (rest (first parts))))
+     (setf (class-spec class-name)
+           (append (class-spec class-name) (rest (first parts))))
      ;; Chiamata ricorsiva con le parti rimanenti
      (def-class-fields class-name (rest parts)))
     ;; Se la prima parte è 'methods', aggiunge i metodi alla classe
     ((eq (first (first parts)) 'methods)
-     (setf (gethash class-name *class-prop*)
-           (append (gethash class-name *class-prop*) (rest (first parts))))
+     (setf (class-spec class-name)
+           (append (class-spec class-name) (rest (first parts))))
      ;; Chiamata ricorsiva con le parti rimanenti
      (def-class-fields class-name (rest parts)))
     ;; Se la prima parte non è né 'fields' né 'methods', segnala un errore
@@ -100,15 +100,6 @@
         (t (cons (list (car fields) (cadr fields))
                  (field-structure (cddr fields))))))
 
-;;; check-method: estrae i metodi dai vari fields passati 
-;;; come argomento elementi e li restituisce in una cons.
-(defun check-method (fields) 
-  "Estrae i metodi dai fields."
-  (cond ((null fields) nil) 
-        ((and (listp (caddr fields)) (member '=> (caddr fields))) 
-         (cons (cadr fields) 
-               (cons (caddr fields) (check-method (cdddr fields)))))
-        (t (check-method (cddr fields)))))
 
 ;;; get-method-names: dato in input una lista che contiene metodi, estrae
 ;;; e restituisce come cons solo i nomi del metodo senza il corpo.
@@ -118,11 +109,60 @@
         (t (cons (car methods) (get-method-names (cddr methods))))))
 
   
+;; funzione che serve per stampare il valore di un dato attributo	 
+;;; Verifico che l'istanza inizi per "oolinst", altrimenti stampo un errore
+;;; Se esiste, verifico che slot-name sia un simbolo
+;;; Se non riscontro errori, calcolo il valore dell'attributo richiesto 
+;;; richiamando la funzione get-slot-value
+(defun field (instance field-name)
+  (cond
+   ((not (symbolp field-name)) (error "Field-name non e' un simbolo!"))
+   (T (get-data instance field-name)))) 
 
 
 
+(defun get-data (instance field-name) 
+    (cond 
+        ;; Caso base 
+        ((null instance) nil)
+        ;; Se è un atom 
+        ((atom (car instance)) (get-data (caddr instance) field-name))
+        ;; Se è un metodo 
+        ((and (symbolp (caar instance)) 
+                (equal (intern (symbol-name (caar instance)) "KEYWORD") 
+                       (intern (symbol-name field-name) "KEYWORD")) 
+                (listp (cdar instance)) 
+                (member '=> (cdar instance))) 
+            (caddar instance))
+        ;; Se è un attributo 
+        ((and (symbolp (caar instance)) 
+              (equal (intern (symbol-name (caar instance)) "KEYWORD") 
+                     (intern (symbol-name field-name) "KEYWORD"))) 
+         ;; Se è nil ma esistente 
+         (if (null (cdar instance)) "undefined" (cdar instance))) 
+        ;; Altrimenti 
+        (T (get-data (cdr instance) field-name))))
 
 
+
+;;; funzione per trovare il valore di un attributo 
+;;; all'interno di oggetti annidati
+(defun field* (instance &rest field-name)
+  (cond 
+   ((null (car field-name)) nil)  
+   ;; se passo un solo elemento eseguo queste istruzioni
+   ((and (eql (length field-name) 1) 
+         (atom (car field-name))) 
+    (field instance (car field-name))) 
+   ;; in tutti gli altri casi eseguo il resto
+   ((eql (length field-name) 1) 
+    (cond ((eql (length (car field-name)) 1) 
+           (field instance (car(car field-name))))
+          (T (field* (field instance (car (car field-name))) 
+                    (rest(car field-name))))))
+   ;; se ce ne sono ancora
+   (t (field* (field instance (car field-name)) 
+             (rest field-name)))))
 
 	   
 
