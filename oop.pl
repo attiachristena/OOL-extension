@@ -1,3 +1,4 @@
+
 class(object, [], [], []).
 point_to(ptr, nullptr).
 :- dynamic class/4.
@@ -19,78 +20,66 @@ def_class(ClassName, Parents, Parts) :-
 
 %%% Data una lista di metodi e campi, separa campi e metodi in due
 %%% liste differenti
-get_methods_and_fields([], [], []) :- !.
-get_methods_and_fields([Field | Rest],
-		       [Field | FieldsRest],
-		       MethodsRest) :-
-    Field =.. [field | _],
-    !,
-    get_methods_and_fields(Rest, FieldsRest, MethodsRest).
-get_methods_and_fields([Method | Rest],
-		       FieldsRest,
-		       [Method | MethodsRest]) :-
-    Method =.. [method | _],
-    !,
-    get_methods_and_fields(Rest, FieldsRest, MethodsRest).
+get_methods_and_fields([], [], []).
+get_methods_and_fields([Term | Rest], FieldsRest, MethodsRest) :-
+    (   Term =.. [field | _],
+        FieldsRest = [Term | Fields],
+        get_methods_and_fields(Rest, Fields, MethodsRest)
+    ;   Term =.. [method | _],
+        MethodsRest = [Term | Methods],
+        get_methods_and_fields(Rest, FieldsRest, Methods)
+    ;   get_methods_and_fields(Rest, FieldsRest, MethodsRest)
+    ).
+
 
 %%% Riscrive i campi contenuti in una lista in una forma standard
 %%% scelta in fase di implementazione, ovvero field(Nome, Oggetto)
-standardize_fields([], []) :- !.
-standardize_fields([field(Name, Value) | Rest],
-		   [field(Name, Obj) | StandardRest]) :-
+standardize_fields([], []).
+standardize_fields([Field | Rest], [StandardField | StandardRest]) :-
+    process_field(Field, StandardField),
+    standardize_fields(Rest, StandardRest).
+
+process_field(field(Name, Value), field(Name, Obj)) :-
     \+ is_instance(Value),
     !,
-    new(void, Value, Obj),
-    standardize_fields(Rest, StandardRest).
-standardize_fields([field(Name, Value, Type) | Rest],
-		   [field(Name, Obj) | StandardRest]) :-
+    new(void, Value, Obj).
+process_field(field(Name, Value, Type), field(Name, Obj)) :-
     \+ is_instance(Value),
     !,
-    new(Type, Value, Obj),
-    standardize_fields(Rest, StandardRest).
-standardize_fields([field(Name, object(X, Y)) | Rest],
-		   [field(Name, object(X, Y)) | StandardRest]) :-
+    new(Type, Value, Obj).
+process_field(field(Name, object(X, Y)), field(Name, object(X, Y))) :-
     is_instance(X, Y),
-    !,
-    standardize_fields(Rest, StandardRest).
-standardize_fields([field(Name, object(Type1, Value), Type2) | Rest],
-		   [field(Name, object(Type2, Value)) | StandardRest]) :-
+    !.
+process_field(field(Name, object(Type1, Value), Type2), field(Name, object(Type2, Value))) :-
     is_instance(object(Type1, Value)),
     !,
-    is_subtype_of(Type1, Type2),
-    standardize_fields(Rest, StandardRest).
+    is_subtype_of(Type1, Type2).
 
-%%% Riscrive i metodi contenuti in una lista in una forma standard
-%%% scelta in fase di implementazione, ovvero (Testa :- Corpo), dove
-%%% a testa è stato aggiunto il parametro This e nel corpo il termine this
-%%% è stato sostituito con This.
+
+
 standardize_methods([], []) :- !.
-standardize_methods([method(Name, Args, Body) | Rest],
-		    [(StandardHead :- StandardBody) | StandardRest]) :-
-    StandardHead =.. [Name, This | Args],
-    replace(this, This, Body, StandardBody),
+standardize_methods([Method | Rest], [StandardMethod | StandardRest]) :-
+    process_method(Method, StandardMethod),
     standardize_methods(Rest, StandardRest).
 
-%%% Dato in input un termine (anche composto), sostituisce un sotto-termine
-%%% con un nuovo termine o variabile logica.
-replace(_, _, Variable, Variable) :-
+process_method(method(Name, Args, Body), (StandardHead :- StandardBody)) :-
+    StandardHead =.. [Name, This | Args],
+    replace_this(This, Body, StandardBody).
+
+replace_this(_, Variable, Variable) :-
     var(Variable),
     !.
-replace(Replacee, Replacement, OldAtom, Replacement) :-
+replace_this(This, OldTerm, NewTerm) :-
+    compound(OldTerm),
+    OldTerm =.. [Functor | OldArgs],
+    maplist(replace_this(This), OldArgs, NewArgs),
+    NewTerm =.. [Functor | NewArgs].
+replace_this(This, OldAtom, OldAtom) :-
     atomic(OldAtom),
-    OldAtom = Replacee,
+    OldAtom \= this,
     !.
-replace(Replacee, _, OldAtom, OldAtom) :-
-    atomic(OldAtom),
-    Replacee \= OldAtom,
-    !.
-replace(Replacee, Replacement, OldCompound, NewCompound) :-
-    nonvar(OldCompound),
-    compound(OldCompound),
-    !,
-    OldCompound =.. [Functor | OldArgs],
-    maplist(replace(Replacee, Replacement), OldArgs, NewArgs),
-    NewCompound =.. [Functor | NewArgs].
+replace_this(This, this, This).
+
 
 %%% Data una lista di campi, eredita il loro tipo da un'altra lista di campi.
 inherit_field_type([], [], []) :- !.
@@ -100,63 +89,50 @@ inherit_field_type(Fields, [], Fields) :-
 inherit_field_type([], InheritedFields, []) :-
     InheritedFields \= [],
     !.
-inherit_field_type([field(FieldName, object(void, Value1)) | Rest1],
-		   [field(FieldName, object(Type, _)) | Rest2],
-		   [field(FieldName, object(Type, Value1)) | Rest3]) :-
-    !,
-    inherit_field_type(Rest1, Rest2, Rest3).
-inherit_field_type([field(FieldName, object(Type1, Value1)) | Rest1],
-		   [field(FieldName, object(Type2, _)) | Rest2],
-		   [field(FieldName, object(Type1, Value1)) | Rest3]) :-
+inherit_field_type([Field1 | Rest1], [Field2 | Rest2], [ResultField | RestResult]) :-
+    process_field_type(Field1, Field2, ResultField),
+    inherit_field_type(Rest1, Rest2, RestResult).
+
+process_field_type(field(FieldName, object(void, Value1)),
+                   field(FieldName, object(Type, _)),
+                   field(FieldName, object(Type, Value1))) :-
+    !.
+process_field_type(field(FieldName, object(Type1, Value1)),
+                   field(FieldName, object(Type2, _)),
+                   field(FieldName, object(Type1, Value1))) :-
     Type1 \= void,
-    !,
     is_subtype_of(Type1, Type2),
-    inherit_field_type(Rest1, Rest2, Rest3).
-inherit_field_type([field(FieldName1, Obj1) | FieldsRest1],
-		   [field(FieldName2, Obj2) | FieldsRest2],
-		   Result) :-
-    FieldName1 \= FieldName2,
-    !,
-    inherit_field_type([field(FieldName1, Obj1)], FieldsRest2, Tmp1),
-    inherit_field_type(FieldsRest1,
-		       [field(FieldName2, Obj2) | FieldsRest2],
-		       Tmp2),
-    append(Tmp1, Tmp2, Result).
+    !.
+process_field_type(Field1, Field2, Field2) :-
+    Field1 \= Field2,
+    !.
 
-%%% Istanzia un nuovo oggetto del tipo specificato,
-%%% a cui viene assegnato un nome.
-make(Name, Type) :-
-    ground(Name),
-    !,
-    \+ point_to(Name, _),
-    new(Type, Obj),
-    asserta(point_to(Name, Obj)).
-make(Name, Type) :-
-    var(Name),
-    !,
-    new(Type, Obj),
-    Name = Obj.
-make(Name, Type) :-
-    new(Type, Obj),
-    Name = Obj.
 
-%%% Istanzia un nuovo oggetto del tipo specificato e lo inizializza
-%%% con gli argomenti specificati. Inoltre assegna il nome specificato
-%%% all'istanza.
+make(Name, Type) :-
+    (   ground(Name),
+        \+ point_to(Name, _),
+        new(Type, Obj),
+        asserta(point_to(Name, Obj))
+    ;   var(Name),
+        new(Type, Obj),
+        Name = Obj
+    ;   new(Type, Obj),
+        Name = Obj
+    ).
+
 make(Name, Type, Params) :-
-    ground(Name),
-    !,
-    \+ point_to(Name, _),
-    new(Type, Params, Obj),
-    asserta(point_to(Name, Obj)).
-make(Name, Type, Params) :-
-    var(Name),
-    !,
-    new(Type, Params, Obj),
-    Name = Obj.
-make(Name, Type, Params) :-
-    new(Type, Params, Obj),
-    Name = Obj.
+    (   ground(Name),
+        \+ point_to(Name, _),
+        new(Type, Params, Obj),
+        asserta(point_to(Name, Obj))
+    ;   var(Name),
+        new(Type, Params, Obj),
+        Name = Obj
+    ;   new(Type, Params, Obj),
+        Name = Obj
+    ).
+
+
 
 %%% Eredita, utilizzando un'ereditarietà depth-first left-most,
 %%% tutti i campi e i metodi dalle classi specificate.
@@ -174,45 +150,60 @@ inherit([Parent | Rest], Fields, Methods) :-
 %%% Appende due liste di campi. Nel caso sia presente un campo con lo stesso
 %%% nome sia nella prima lista che nella seconda, il campo della seconda lista
 %%% viene scartato.
-helper_append_fields([], [], []) :- !.
-helper_append_fields(X, [], X) :- X \= [], !.
-helper_append_fields([], X, X) :- X \= [], !.
+helper_append_fields([], [], []).
 helper_append_fields([field(Name, Value) | Rest1],
-		     [field(Name, _) | Rest2],
-		     Result) :-
-    !,
-    helper_append_fields([field(Name, Value) | Rest1], Rest2, Result).
+                     [field(Name, _) | Rest2],
+                     [field(Name, Value) | Result]) :-
+    helper_append_fields(Rest1, Rest2, Result).
+helper_append_fields(X, [], X) :- X \= [].
+helper_append_fields([], X, X) :- X \= [].
 helper_append_fields([field(Name1, Value1) | Rest1],
-		     [field(Name2, Value2) | Rest2],
-		     Result) :-
-    Name1 \= Name2,
-    !,
-    helper_append_fields(Rest1, [field(Name2, Value2)], Tmp1),
-    helper_append_fields([field(Name1, Value1) | Tmp1], Rest2, Result).
+                     [field(Name2, Value2) | Rest2],
+                     Result) :-
+    (   Name1 \= Name2
+    ),
+    helper_append_fields_aux(Name1, Value1, Rest1, [field(Name2, Value2) | Rest2], Result).
+
+helper_append_fields_aux(Name1, Value1, Rest1, Rest2, Result) :-
+    helper_append_fields(Rest1, [field(Name1, Value1)], Tmp1),
+    helper_append_fields(Tmp1, Rest2, Result).
+
 
 %%% Appende due liste di metodi. Nel caso sia presente un metodo con lo stesso
 %%% nome sia nella prima lista che nella seconda, il metodo della seconda
 %%% lista viene scartato.
-helper_append_methods([], [], []) :- !.
-helper_append_methods(X, [], X) :- X \= [], !.
-helper_append_methods([], X, X) :- X \= [], !.
+helper_append_methods([], [], []).
+helper_append_methods([Method1 | Rest1], [], Result) :-
+    append_method_to_list(Rest1, [Method1], Result).
+helper_append_methods([], [Method2 | Rest2], Result) :-
+    append_method_to_list(Rest2, [Method2], Result).
 
 helper_append_methods([(Head1 :- Body1) | Rest1],
-		      [(Head2 :- _) | Rest2],
-		      Result) :-
-    Head1 =.. [MethodName | _],
-    Head2 =.. [MethodName | _],
-    !,
-    helper_append_methods([(Head1 :- Body1) | Rest1], Rest2, Result).
-helper_append_methods([(Head1 :- Body1) | Rest1],
-		      [(Head2 :- Body2) | Rest2],
-		      Result) :-
-    Head1 =.. [MethodName1 | _],
-    Head2 =.. [MethodName2 | _],
-    MethodName1 \= MethodName2,
-    !,
-    helper_append_methods(Rest1, [(Head2 :- Body2)], Tmp1),
-    helper_append_methods([(Head1 :- Body1) | Tmp1], Rest2, Result).
+                      [(Head2 :- _) | Rest2],
+                      Result) :-
+    extract_method_name(Head1, MethodName1),
+    extract_method_name(Head2, MethodName2),
+    (
+        MethodName1 = MethodName2,
+        helper_append_methods(Rest1, Rest2, Result)
+    ;
+        MethodName1 \= MethodName2,
+        append_method_to_list(Rest1, [(Head2 :- _) | Rest2], Tmp1),
+        helper_append_methods([(Head1 :- Body1) | Tmp1], Rest2, Result)
+    ).
+
+extract_method_name(Method, MethodName) :-
+    Method =.. [MethodName | _].
+
+append_method_to_list(List, Method, Result) :-
+    (
+        List \= [],
+        append(Method, List, Result)
+    ;
+        List = [],
+        Result = Method
+    ).
+
 
 %%% Crea un nuovo oggetto del tipo specificato, inizializzato a un valore
 %%% di default.
@@ -246,57 +237,76 @@ new(Type, Params, object(Type, Fields)) :-
     inherit([Type], DefaultFields, _),
     init_fields(DefaultFields, Params, Fields).
 
-%%% Inizializza i campi con i valori passati come parametro.
-%%% Se il campo è del tipo di una classe, allora il suo valore sarà una lista
-%%% di campi.
-init_fields(DefaultFields, [], DefaultFields) :- !.    
-init_fields([field(FieldName, object(Type, _)) | FieldsRest],
-	    [FieldName = NewValue | ParamsRest],
-	    [field(FieldName, NewObj) | ResultRest]) :-
-    !,
-    new(Type, NewValue, NewObj),
-    init_fields(FieldsRest, ParamsRest, ResultRest).
-init_fields([field(FieldName1, Obj) | FieldsRest],
-	    [FieldName2 = NewValue | ParamsRest],
-	    Result) :-
-    FieldName1 \= FieldName2,
-    !,
-    init_fields(FieldsRest, [FieldName2 = NewValue], Tmp),
-    init_fields([field(FieldName1, Obj) | Tmp], ParamsRest, Result).
 
-%%% Estrae il valore del campo di un'istanza. Se il campo è di tipo
-%%% built-in verrà ritornato il suo valore, se invece è del tipo di una
-%%% classe verrà ritornata l'istanza.
+
+
+init_fields(DefaultFields, [], DefaultFields) :- !.
+
+init_fields([Field | FieldsRest], [FieldName = NewValue | ParamsRest], [NewField | ResultRest]) :-
+    process_fields(Field, FieldName, NewValue, NewField),
+    init_fields(FieldsRest, ParamsRest, ResultRest).
+
+init_fields([Field | FieldsRest], [FieldName2 = NewValue | ParamsRest], Result) :-
+    Field \= field(FieldName2, _),
+    init_fields(FieldsRest, [FieldName2 = NewValue], Tmp),
+    init_fields([Field | Tmp], ParamsRest, Result).
+
+process_fields(field(FieldName, object(Type, _)), FieldName, NewValue, field(FieldName, NewObj)) :-
+    new(Type, NewValue, NewObj).
+process_fields(Field, _, _, Field).
+
+
+
+
+
 field(Ptr, Name, Value) :-
     inst(Ptr, Obj),
+    field_helper(Obj, Name, Value).
+
+field_helper(object(_, Fields), Name, Value) :-
+    member(field(Name, FieldValue), Fields),
     !,
-    field(Obj, Name, Value).
-field(object(_, [field(Name, object(Class, Value)) | _]),
-      Name,
-      object(Class, Value)) :-
-    is_class(Class),
+    (   is_class_instance(FieldValue, object(Class, Value)),
+        is_class(Class)
+    ;   is_builtin_instance(FieldValue, Type, Value),
+        is_builtin(Type)
+    ;   is_builtin(FieldValue),
+        Value = FieldValue
+    ).
+
+field_helper(object(_, [field(Name, Field) | _]), Name, Field) :-
     !.
-field(object(_, [field(Name, object(Type, Value)) | _]), Name, Value) :-
-    is_builtin(Type),
-    !.
-field(object(_, [field(FieldName, _) | FieldsRest]), Name, Value) :-
+field_helper(object(_, [field(FieldName, _) | FieldsRest]), Name, Value) :-
     FieldName \= Name,
     !,
-    field(object(_, FieldsRest), Name, Value).
+    field_helper(object(_, FieldsRest), Name, Value).
 
-%%% Restituisce il valore di un campo percorrendo una lista di campi.
+is_class_instance(Term, Instance) :-
+    Term =.. [object, Class | _],
+    is_class(Class),
+    Instance = Term.
+
+is_builtin_instance(Term, Type, Value) :-
+    Term =.. [object, Type, Value],
+    is_builtin(Type).
+
+
 fieldx(InstanceName, FieldNames, Result) :-
     inst(InstanceName, Obj),
-    InstanceName \= object(_, _),
+    \+ InstanceName = object(_, _),
     !,
-    fieldx(Obj, FieldNames,  Result).
-fieldx(object(Type, Value), [FieldName], Result) :-
-    !,
-    field(object(Type, Value), FieldName, Result).
-fieldx(object(Type, Value), [FieldName | Rest], Result) :-
-    !,
-    field(object(Type, Value), FieldName, Tmp),
+    fieldx(Obj, FieldNames, Result).
+
+fieldx(Object, [FieldName], Result) :-
+    field(Object, FieldName, Result).
+
+fieldx(Object, [FieldName | Rest], Result) :-
+    field(Object, FieldName, Tmp),
     fieldx(Tmp, Rest, Result).
+
+
+
+
 
 %%% Verifica se è stata definita una classe con un certo nome.
 is_class(Name) :-
