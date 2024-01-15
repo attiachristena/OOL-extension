@@ -1,4 +1,5 @@
 
+
 class(object, [], [], []).
 point_to(ptr, nullptr).
 :- dynamic class/4.
@@ -7,16 +8,27 @@ point_to(ptr, nullptr).
 %%% Definisce una nuova classe e la inserisce nella base di conoscenza
 def_class(ClassName, Parents) :-
     def_class(ClassName, Parents, []).
+
 def_class(ClassName, Parents, Parts) :-
     \+ class(ClassName, _, _, _),
-    forall(member(Parent, Parents), class(Parent, _, _, _)),
+    maplist(validate_parent_class, Parents),
+
+
     get_methods_and_fields(Parts, TmpFields, TmpMethods),
     standardize_fields(TmpFields, StandardFields),
     standardize_methods(TmpMethods, StandardMethods),
     inherit(Parents, InheritedFields, _),
     inherit_field_type(StandardFields, InheritedFields, FinalFields),
+    forall(member(field(_, Inst), FinalFields),
+           is_instance(Inst)),
     assert_trampolines(StandardMethods),
-    asserta(class(ClassName, Parents, FinalFields, StandardMethods)).
+    asserta(class(ClassName, Parents, FinalFields, StandardMethods)),
+    !,
+    writef("Classe %w creata con successo.\n", [ClassName]).
+def_class(_, _, _) :- writef("Errore: la classe esiste gia'.\n"), fail.
+
+validate_parent_class(Parent) :-
+    class(Parent, _, _, _).
 
 %%% Data una lista di metodi e campi, separa campi e metodi in due
 %%% liste differenti
@@ -30,7 +42,6 @@ get_methods_and_fields([Term | Rest], FieldsRest, MethodsRest) :-
         get_methods_and_fields(Rest, FieldsRest, Methods)
     ;   get_methods_and_fields(Rest, FieldsRest, MethodsRest)
     ).
-
 
 %%% Riscrive i campi contenuti in una lista in una forma standard
 %%% scelta in fase di implementazione, ovvero field(Nome, Oggetto)
@@ -55,8 +66,6 @@ process_field(field(Name, object(Type1, Value), Type2), field(Name, object(Type2
     !,
     is_subtype_of(Type1, Type2).
 
-
-
 standardize_methods([], []) :- !.
 standardize_methods([Method | Rest], [StandardMethod | StandardRest]) :-
     process_method(Method, StandardMethod),
@@ -74,14 +83,19 @@ replace_this(This, OldTerm, NewTerm) :-
     OldTerm =.. [Functor | OldArgs],
     maplist(replace_this(This), OldArgs, NewArgs),
     NewTerm =.. [Functor | NewArgs].
-replace_this(This, OldAtom, OldAtom) :-
-    atomic(OldAtom),
-    OldAtom \= this,
-    !.
-replace_this(This, this, This).
 
+replace_this(This, OldAtom, This) :-
+    atomic(OldAtom),
+    OldAtom = this,
+    !.
+replace_this(_, OldAtom, OldAtom) :-
+    atomic(OldAtom),
+    OldAtom \= this.
+    
 
 %%% Data una lista di campi, eredita il loro tipo da un'altra lista di campi.
+
+
 inherit_field_type([], [], []) :- !.
 inherit_field_type(Fields, [], Fields) :-
     Fields \= [],
@@ -108,31 +122,40 @@ process_field_type(Field1, Field2, Field2) :-
     !.
 
 
+
 make(Name, Type) :-
+
+
     (   ground(Name),
         \+ point_to(Name, _),
         new(Type, Obj),
-        asserta(point_to(Name, Obj))
+        asserta(point_to(Name, Obj)),
+        !
     ;   var(Name),
         new(Type, Obj),
-        Name = Obj
+        Name = Obj,
+        !
     ;   new(Type, Obj),
         Name = Obj
     ).
 
 make(Name, Type, Params) :-
+
+
     (   ground(Name),
         \+ point_to(Name, _),
         new(Type, Params, Obj),
-        asserta(point_to(Name, Obj))
+        asserta(point_to(Name, Obj)),
+        !
     ;   var(Name),
         new(Type, Params, Obj),
-        Name = Obj
+        Name = Obj,
+        !
     ;   new(Type, Params, Obj),
         Name = Obj
+
+
     ).
-
-
 
 %%% Eredita, utilizzando un'ereditarietà depth-first left-most,
 %%% tutti i campi e i metodi dalle classi specificate.
@@ -151,11 +174,15 @@ inherit([Parent | Rest], Fields, Methods) :-
 %%% nome sia nella prima lista che nella seconda, il campo della seconda lista
 %%% viene scartato.
 helper_append_fields([], [], []).
+
+
 helper_append_fields([field(Name, Value) | Rest1],
                      [field(Name, _) | Rest2],
                      [field(Name, Value) | Result]) :-
     helper_append_fields(Rest1, Rest2, Result).
 helper_append_fields(X, [], X) :- X \= [].
+
+
 helper_append_fields([], X, X) :- X \= [].
 helper_append_fields([field(Name1, Value1) | Rest1],
                      [field(Name2, Value2) | Rest2],
@@ -177,6 +204,8 @@ helper_append_methods([Method1 | Rest1], [], Result) :-
     append_method_to_list(Rest1, [Method1], Result).
 helper_append_methods([], [Method2 | Rest2], Result) :-
     append_method_to_list(Rest2, [Method2], Result).
+
+
 
 helper_append_methods([(Head1 :- Body1) | Rest1],
                       [(Head2 :- _) | Rest2],
@@ -207,6 +236,8 @@ append_method_to_list(List, Method, Result) :-
 
 %%% Crea un nuovo oggetto del tipo specificato, inizializzato a un valore
 %%% di default.
+
+
 new(void, object(void, null)) :- !.
 new(bool, object(bool, false)) :- !.
 new(number, object(number, 0)) :- !.
@@ -239,7 +270,9 @@ new(Type, Params, object(Type, Fields)) :-
 
 
 
-
+%%% Inizializza i campi con i valori passati come parametro.
+%%% Se il campo è del tipo di una classe, allora il suo valore sarà una lista
+%%% di campi.
 init_fields(DefaultFields, [], DefaultFields) :- !.
 
 init_fields([Field | FieldsRest], [FieldName = NewValue | ParamsRest], [NewField | ResultRest]) :-
@@ -257,52 +290,56 @@ process_fields(Field, _, _, Field).
 
 
 
-
-
+%%% Estrae il valore del campo di un'istanza. Se il campo è di tipo
+%%% built-in verrà ritornato il suo valore, se invece è del tipo di una
+%%% classe verrà ritornata l'istanza.
 field(Ptr, Name, Value) :-
     inst(Ptr, Obj),
-    field_helper(Obj, Name, Value).
+    field(Obj, Name, Value).
 
-field_helper(object(_, Fields), Name, Value) :-
-    member(field(Name, FieldValue), Fields),
-    !,
-    (   is_class_instance(FieldValue, object(Class, Value)),
-        is_class(Class)
-    ;   is_builtin_instance(FieldValue, Type, Value),
-        is_builtin(Type)
-    ;   is_builtin(FieldValue),
-        Value = FieldValue
-    ).
-
-field_helper(object(_, [field(Name, Field) | _]), Name, Field) :-
-    !.
-field_helper(object(_, [field(FieldName, _) | FieldsRest]), Name, Value) :-
-    FieldName \= Name,
-    !,
-    field_helper(object(_, FieldsRest), Name, Value).
-
-is_class_instance(Term, Instance) :-
-    Term =.. [object, Class | _],
+field(object(_, Fields), Name, object(Class, Value)) :-
+    member(field(Name, object(Class, Value)), Fields),
     is_class(Class),
-    Instance = Term.
+    !.
 
-is_builtin_instance(Term, Type, Value) :-
-    Term =.. [object, Type, Value],
-    is_builtin(Type).
+field(object(_, Fields), Name, Value) :-
+    member(field(Name, object(Type, Value)), Fields),
+    is_builtin(Type),
+    !.
+
+field(object(_, [Field | FieldsRest]), Name, Value) :-
+    Field = field(FieldName, _),
+    FieldName \= Name,
 
 
+    field(object(_, FieldsRest), Name, Value).
+
+
+%%% Restituisce il valore di un campo percorrendo una lista di campi.
 fieldx(InstanceName, FieldNames, Result) :-
     inst(InstanceName, Obj),
-    \+ InstanceName = object(_, _),
-    !,
-    fieldx(Obj, FieldNames, Result).
+    InstanceName \= object(_, _),
+    fieldx_helper(Obj, FieldNames, Result).
 
-fieldx(Object, [FieldName], Result) :-
-    field(Object, FieldName, Result).
+fieldx(object(Type, Value), [FieldName], Result) :-
 
-fieldx(Object, [FieldName | Rest], Result) :-
-    field(Object, FieldName, Tmp),
+
+    field(object(Type, Value), FieldName, Result).
+
+fieldx(object(Type, Value), [FieldName | Rest], Result) :-
+    field(object(Type, Value), FieldName, Tmp),
     fieldx(Tmp, Rest, Result).
+
+fieldx_helper(Obj, [FieldName], Result) :-
+    field(Obj, FieldName, Result).
+
+fieldx_helper(Obj, [FieldName | Rest], Result) :-
+
+
+    field(Obj, FieldName, Tmp),
+    fieldx_helper(Tmp, Rest, Result).
+
+
 
 
 
@@ -322,6 +359,8 @@ is_instance(object(Type1, Value), Type2) :-
     is_instance(object(Type1, Value)).
 
 %%% Verifica se l'istanza è valida.
+
+
 is_instance(object(void, _)) :- !.
 is_instance(object(number, X)) :- !, number(X).
 is_instance(object(rational, X)) :- !, rational(X).
@@ -339,6 +378,8 @@ is_instance(object(Type, Fields)) :-
     inherit([Type], ClassFields, _),
     forall(member(field(Name, _), Fields),
 	   member(field(Name, _), ClassFields)).
+
+
 %%% Verifica se un tipo è sottotipo di un altro.
 is_subtype_of(X, X) :- !.
 is_subtype_of(float, number) :- !.
@@ -357,6 +398,8 @@ helper_is_subtype_of([X | _], Class) :-
 helper_is_subtype_of([X | Xs], Class) :-
     \+ is_subtype_of(X, Class),
     !,
+
+
     helper_is_subtype_of(Xs, Class).
 
 %%% Verifica se un tipo è built-in
@@ -369,17 +412,29 @@ is_builtin(float).
 is_builtin(rational).
 is_builtin(integer).
 
-%%% Aggiunge alla base di conoscenza un predicato trampolino per
-%%% richiamare correttamente i metodi di una classe.
+% Predicato principale per l'assert dei trampolini.
 assert_trampolines([]).
-assert_trampolines([(Head :- _) | Rest]) :-
-    Head =.. [Name | Args],
-    functor(Head, Name,  Arity),
-    abolish(Name, Arity),
-    asserta((Head :- invoke_method(Name, Args))),
+
+assert_trampolines([Trampoline | Rest]) :-
+    assert_trampoline(Trampoline),
     assert_trampolines(Rest).
 
-%%% Esegue il metodo di un'istanza.
+% Predicato ausiliario per l'assert di un singolo trampolino.
+assert_trampoline(Head :- _) :-
+
+
+    extract_method_info(Head, Name, Arity, Args),
+    abolish(Name, Arity),
+    asserta((Head :- invoke_method(Name, Args))).
+
+% Estrae informazioni da un predicato di trampolino.
+extract_method_info(Head, Name, Arity, Args) :-
+    Head =.. [Name | Args],
+
+
+    functor(Head, Name, Arity).
+
+% Esegue il metodo di un'istanza.
 invoke_method(Name, [Ptr | Args]) :-
     inst(Ptr, Instance),
     !,
@@ -389,7 +444,7 @@ invoke_method(Name, [object(Type, Value) | Args]) :-
     asserta((Head :- Body)),
     CalledHead =.. [Name | [object(Type, Value) | Args]],
     !,
-    call(CalledHead), !,      %%% questo è un red cut
+    call(CalledHead), !,
     retract(Head :- Body), !.
 
 %%% Sceglie il migliore metodo da eseguire data una gerarchia di classi.
@@ -406,32 +461,24 @@ get_best_method([Class], MethodName, BestMethod) :-
     get_best_method(Parents, MethodName, BestMethod).
 get_best_method([Class | Classes], MethodName, BestMethod) :-
     Classes \= [],
-    get_best_method([Class], MethodName, BestMethod),
-    !.
-get_best_method([Class | Classes], MethodName, BestMethod) :-
-    Classes \= [],
-    \+ get_best_method([Class], MethodName, _),
-    class(Class, Parents, _, _),
-    get_best_method(Parents, MethodName, BestMethod),
-    !.
-get_best_method([Class | Classes], MethodName, BestMethod) :-
-    Classes \= [],
-    \+ get_best_method([Class], MethodName, _),
-    class(Class, Parents, _, _),
-    \+ get_best_method(Parents, MethodName, _),
-    get_best_method(Classes, MethodName, BestMethod),
-    !.
+    (
+        get_best_method([Class], MethodName, BestMethod)
+    ;
 
-%%% Ottiene il metodo di nome specificato da una lista di metodi.
-get_method_from_methods_list(MethodName,
-			     [(Head :- Body) | _],
-			     (Head :- Body)) :-
+
+        \+ get_best_method([Class], MethodName, _),
+        class(Class, Parents, _, _),
+        get_best_method(Parents, MethodName, BestMethod)
+    ),
+    !,
+    get_best_method(Classes, MethodName, BestMethod).
+
+
+
+get_method_from_methods_list(MethodName, [(Head :- Body) | _], (Head :- Body)) :-
     Head =.. [MethodName | _].
-get_method_from_methods_list(MethodName,
-			     [(Head :- _) | Rest],
-			     Result) :-
+get_method_from_methods_list(MethodName, [(Head :- _) | Rest], Result) :-
     Head =.. [Functor | _],
     Functor \= MethodName,
     !,
     get_method_from_methods_list(MethodName, Rest, Result).
-    
