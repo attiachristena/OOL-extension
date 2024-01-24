@@ -1,197 +1,288 @@
-;;;; Attia Christena 894887
+;;; Attia Christena 894887
 
-;; Istanzia la hash-table
-(defparameter *class-specs* (make-hash-table))
+;;; Tabella hash per memorizzare le specifiche delle classi
+(defparameter class-specs (make-hash-table))
 
-;; Definisce gli attributi delle hash-table
-(defun add-class-spec (name class-spec)
-  (setf (gethash name *class-specs*) class-spec))
+;;; Aggiunge una specifica di classe alla tabella hash
+(defun add-class-spec (class class-spec)
+  (setf (gethash class class-specs) class-spec))
 
-;; Ritorna il valore definito precedentemente					
+;;; Restituisce la specifica di classe per il nome dato
 (defun class-spec (name)
-  (gethash name *class-specs*))
+  (gethash name class-specs))
 
-;; Controlla che esistano i genitori
-(defun parents-exist (parents)
-  (every #'get-hash parents))
+;;; Restituisce la lista dei genitori della classe data
+(defun class-spec-parents (name)
+  (let ((class-spec (gethash name class-specs)))
+    (if class-spec (car class-spec) nil)))
 
-;; Controlla che la classe passata esista
-(defun class-exists (class-name)
-  (gethash class-name *class-prop*))
+;;; Restituisce i campi della classe data
+(defun class-spec-fields (name)
+  (let ((class-spec (gethash name class-specs)))
+    (if class-spec (cadr class-spec) nil)))
 
-;; Definisce la classe
-(defun def-class (class-name parents &rest parts)
-  ;; Serie di controlli che verificano che i parametri siano validi
-  (cond
-    ((or (not (listp parents))
-	(null parents)
-	(not (parents-exist parents))
-	(error "Errore: la lista parents non è valida.")))
-    ((or (eq (null class-name)
-	    (equal '() class-name))
-	(not (symbolp class-name))
-	(error "Errore: il nome della classe non è valido.")))
-    ((class-spe class-name)
-     (error "Errore: la classe ~a esiste già." class-name))
-    (t
-     ;; Creazione della classe e aggiunta dei genitori
-     (setf (class-spec class-name) (cons class-name parents))
-     ;; Chiamata alla funzione ausiliaria per definire i campi e i metodi
-     (def-class-fields class-name (rest parts))))
-  ;; Ritorna il nome della classe 
-  class-name)
+;;; Restituisce i metodi della classe data
+(defun class-spec-methods (name)
+  (let ((class-spec (gethash name class-specs)))
+    (if class-spec (caddr class-spec) nil)))
 
+;;; Definisce una nuova classe con nome, genitori e parti e
+;;; aggiunge la specifica alla tabella hash
+(defun def-class (class-name parents-list &rest parts)
+  (cond ((not (check-parents parents-list)))
+	(t (progn
+             (add-class-spec
+              class-name
+              (list parents-list
+                    (get_field_type
+                     (get-fields parts)
+                     (get-field-type-parents parents-list))
+                    (get-methods parts)))
+             class-name))))
 
-;; Definisce la parte dei field e dei method
-(defun def-class-fields (class-name parts)
-  (cond
-    ;; Se la lista di parti è vuota, termina la ricorsione
-    ((null parts) nil)
-    ;; Se la prima parte è 'fields', aggiunge i campi alla classe
-    ((eq (first (first parts)) 'fields)
-     (setf (class-spec class-name)
-           (append (class-spec class-name) (rest (first parts))))
-     ;; Chiamata ricorsiva con le parti rimanenti
-     (def-class-fields class-name (rest parts)))
-    ;; Se la prima parte è 'methods', aggiunge i metodi alla classe
-    ((eq (first (first parts)) 'methods)
-     (setf (class-spec class-name)
-           (append (class-spec class-name) (rest (first parts))))
-     ;; Chiamata ricorsiva con le parti rimanenti
-     (def-class-fields class-name (rest parts)))
-    ;; Se la prima parte non è né 'fields' né 'methods', segnala un errore
-    (t
-     (error "Errore: parte invalida"))))
+;;; Crea un'istanza di classe con il nome e gli argomenti specificati
+(defun make (class-name &rest args)
+  (cond ((and (= (length args) 1)
+	      (listp (car args))
+	      (= (length (car args)) 3)
+	      (equal (caar args) 'oolinst))
+	 (if (is-subtype-of (cadar args) class-name)
+	     (list 'oolinst class-name (caddar args))
+             (error "Campo non valido.")))
+	((is-class class-name)
+	 (list 'oolinst
+	       class-name
+	       (upgrade-field (define-list-field
+				  (class-spec-fields class-name)
+				  (get-field-type-parents
+                                   (class-spec-parents class-name)))
+                              args)))
+        ((and (equal class-name 'T)
+	      (= (length args) 1))
+	 (list 'oolinst 'T (car args)))
+	((and (= (length args) 1)
+	      (subtypep (type-of (car args)) class-name))
+	 (list 'oolinst class-name (car args)))
+	(t (error "Campo non valido."))))
 
-;; Function to check if a symbol is a class
-(defun is-class (name)
-  "Restituisce T se l'atomo passato è il nome di una classe."
-  (and (listp name)
-       (eq (car name) 'is-class)
-       (symbolp (cadr name))))
+;;; Controlla se il nome della classe Ã¨ giÃ  in uso
+(defun check-class-name (class-name)
+  (if (is-class class-name)
+      (error "La classe esiste gia'.")))
 
+;;; Controlla se tutte le classi genitore siano definite
+(defun check-parents (parents-list)
+  (cond ((null parents-list) T)
+        ((is-class (car parents-list))
+         (check-parents (cdr parents-list)))
+        (t (error "Una o piu' classi genitore non definite."))))
 
-;; Function to check if an object is an instance of a class
-(defun is-instance (object &optional class-name)
-  (cond
-    ((eq class-name 'T) t)  ;; If class-name is T, any instance is considered valid
-    ((and (is-class class-name) (typep object (symbol-value class-name))) t)
-    (t nil)))
+;;; Verifica se la classe e' definita
+(defun is-class (class-name)
+  (if (class-spec class-name) T
+      NIL))
 
+;;; Verifica se l'oggetto Ã¨ un'istanza della classe specificata
+(defun is-instance (instance &optional (class-name 'T))
+  (and (listp instance)
+       (eq (car instance) 'oolinst)
+       (if (eq class-name 'T)
+           (or (is-class (cadr instance))
+               (subtypep (type-of (caddr instance)) (cadr instance)))
+           (and (is-subtype-of (cadr instance) class-name)
+		(or (is-class (cadr instance))
+		    (subtypep (type-of (caddr instance))
+			      (cadr instance)))))))
 
-	
- (defun make (class-name &rest fields)
-  "Crea un'istanza della classe con i campi specificati."
-  (cond ((not (is-class class-name))
-         nil)
-        (t
-         (list 'oolinst
-               class-name
-               (field-structure (check-method (check-slot-exists class-name fields)))))))
+;;; Eredita i campi dalle classi genitore
+(defun get-field-type-parents(parents-list)
+  (if (not (null parents-list))
+      (define-list-field
+	  (define-list-field (class-spec-fields (car parents-list))
+	      (get-field-type-parents
+	       (class-spec-parents (car parents-list))))
+	  (get-field-type-parents(cdr parents-list)))
+      '()))
 
+;;; Unisce due liste di campi, evitando duplicati
+(defun define-list-field (list1 list2)
+  (if list2
+      (if (not (get-field-type (caar list2) list1))
+          (define-list-field (append list1 (list (car list2))) (cdr list2))
+          (define-list-field list1 (cdr list2)))
+      list1))
 
-(defun field-structure (fields)
-  (cond ((= (list-length fields) 0) nil)
-        ((member (car fields) (get-method-names (check-method fields)))
-         (cons (list (car fields)
-                     '=> 
-                     (process-method (car fields) (caddr fields)))
-               (field-structure (cdddr fields))))
-        (t (cons (list (car fields) (cadr fields))
-                 (field-structure (cddr fields))))))
+;;; Estrae la lista dei campi dalle parti della classe
+(defun get-fields (parts)
+  (if parts
+      (if (equal (caar parts) 'fields)
+          (append (mapcar #'rewrite-field (cdar parts))
+                  (get-fields (cdr parts)))
+          (get-fields (cdr parts)))
+      '()))
 
+;;; Esegue la validazione di un campo
+(defun rewrite-field (field)
+  (if (= (length field) 2)
+      (list (symbol-name (car field)) (make 'T (cadr field)))
+      (if (= (length field) 3)
+          (list (symbol-name (car field)) (make (caddr field) (cadr field)))
+          nil)))
 
-;;; get-method-names: dato in input una lista che contiene metodi, estrae
-;;; e restituisce come cons solo i nomi del metodo senza il corpo.
-(defun get-method-names (methods)
-  "Restituisce una lista contenente solo i nomi dei metodi."
-  (cond ((null methods) nil) 
-        (t (cons (car methods) (get-method-names (cddr methods))))))
+;;; Esegue la validazione dei campi in modo ricorsivo
+(defun helper-rewrite-field (fields)
+  (if fields
+      (append (list (rewrite-field (car fields)))
+              (helper-rewrite-field (cdr fields)))
+      '()))
 
-  
-;; funzione che serve per stampare il valore di un dato attributo	 
-;;; Verifico che l'istanza inizi per "oolinst", altrimenti stampo un errore
-;;; Se esiste, verifico che slot-name sia un simbolo
-;;; Se non riscontro errori, calcolo il valore dell'attributo richiesto 
-;;; richiamando la funzione get-slot-value
+;;; Restituisce il valore di un campo specifico
 (defun field (instance field-name)
+  (if (and (is-instance instance) (get-field-type (symbol-name field-name)
+						  (caddr instance)))
+      (get-field-type (symbol-name field-name) (caddr instance))
+      (error "Campo sconosciuto.")))
+
+;;; Restituisce i valori di uno o piÃ¹ campi specifici
+(defun field* (instance &rest fields-name)
+  (if (is-instance instance)
+      (if fields-name
+          (if (null (car fields-name))
+              (error "Il nome del field non puÃ² essere vuoto.")
+              (field* (field instance (car fields-name)) (cdr fields-name)))
+          instance)
+      (error "Parametro invalido.")))
+
+;;; Restituisce la lista di campi con i relativi tipi
+(defun get_field_type (fields parents)
   (cond
-   ((not (symbolp field-name)) (error "Field-name non e' un simbolo!"))
-   (T (get-data instance field-name)))) 
+    ((null parents) fields)
+    ((null fields) '())
+    ((and (equal (car fields) (car parents)))
+     (if (is-instance (cadr (cadr (car fields))) (cadadr (car parents)))
+         (list (cons (caar fields) (cons 'oolinst
+					 (cadr (cadr (car fields))))))
+         (error "Valore non valido.")))
+    ((equal (caar fields) (caar parents))
+     (if (is-subtype-of (cadadr (car fields))
+                        (cadadr (car parents)))
+         (list (car fields))
+         (error "Il tipo del campo Ã¨ il supertipo di uno ereditato.")))
+    (t (append (get_field_type (list (car fields))
+                               (cdr parents))
+               (get_field_type (cdr fields)
+                               parents)))))
 
+;;; Elabora un metodo e lo associa al nome specificato
+(defun process-method (method-name method-spec)
+  (setf (fdefinition method-name)
+        (lambda (this &rest args)
+          (apply (eval (invoke-method this method-name))
+                 (cons this args))))
+  (rewrite-method-code method-name method-spec))
 
+;; Riscrive il codice del metodo come una funzione lambda
+(defun rewrite-method-code (method-name method-spec)
+  (list method-name 
+        (append (list 'lambda)
+                (list (cons 'this (car method-spec)))
+                (cdr method-spec))))
 
-(defun get-data (instance field-name) 
-    (cond 
-        ;; Caso base 
-        ((null instance) nil)
-        ;; Se è un atom 
-        ((atom (car instance)) (get-data (caddr instance) field-name))
-        ;; Se è un metodo 
-        ((and (symbolp (caar instance)) 
-                (equal (intern (symbol-name (caar instance)) "KEYWORD") 
-                       (intern (symbol-name field-name) "KEYWORD")) 
-                (listp (cdar instance)) 
-                (member '=> (cdar instance))) 
-            (caddar instance))
-        ;; Se è un attributo 
-        ((and (symbolp (caar instance)) 
-              (equal (intern (symbol-name (caar instance)) "KEYWORD") 
-                     (intern (symbol-name field-name) "KEYWORD"))) 
-         ;; Se è nil ma esistente 
-         (if (null (cdar instance)) "undefined" (cdar instance))) 
-        ;; Altrimenti 
-        (T (get-data (cdr instance) field-name))))
+;;; Invoca un metodo sull'istanza, tenendo conto dell'ereditarietÃ 
+(defun invoke-method (instance method-name)
+  (let ((instance-methods (class-spec-methods (cadr instance)))
+        (parent-method (parents-method (class-spec-parents (cadr instance))
+				       method-name)))
+    (if instance-methods
+        (if (extract-method method-name instance-methods)
+            (extract-method method-name instance-methods)
+            (if parent-method
+                parent-method
+                (error "Il metodo non esiste.")))
+        (if parent-method
+            parent-method
+            (error "Il metodo non esiste.")))))
 
+;;; Aggiorna i campi della classe con i nuovi valori
+(defun upgrade-field (old-fields args)
+  (if args
+      (if (get-field-type (symbol-name (car args)) old-fields)
+          (upgrade-field (upgrade-field-helper old-fields
+					       (list (car args)
+						     (cadr args)))
+                         (cddr args))
+          (error "Aggiornamento campi non riuscito."))
+      old-fields))
 
+;;; Aggiorna un campo specifico nella lista dei campi
+(defun upgrade-field-helper (old-fields field)
+  (if (null old-fields)
+      (error "Campo non trovato.")
+      (if (equal (caar old-fields) (symbol-name (car field)))
+          (cons (list (caar old-fields)
+                      (make (cadr (cadar old-fields)) (cadr field)))
+                (cdr old-fields))
+          (cons (car old-fields)
+                (upgrade-field-helper (cdr old-fields) field)))))
 
-;;; funzione per trovare il valore di un attributo 
-;;; all'interno di oggetti annidati
-(defun field* (instance &rest field-name)
-  (cond 
-   ((null (car field-name)) nil)  
-   ;; se passo un solo elemento eseguo queste istruzioni
-   ((and (eql (length field-name) 1) 
-         (atom (car field-name))) 
-    (field instance (car field-name))) 
-   ;; in tutti gli altri casi eseguo il resto
-   ((eql (length field-name) 1) 
-    (cond ((eql (length (car field-name)) 1) 
-           (field instance (car(car field-name))))
-          (T (field* (field instance (car (car field-name))) 
-                    (rest(car field-name))))))
-   ;; se ce ne sono ancora
-   (t (field* (field instance (car field-name)) 
-             (rest field-name)))))
+;;; Estrae la lista dei metodi dalle parti della classe
+(defun get-methods (parts)
+  (cond ((null parts)
+	 nil)
+        ((equal (caar parts) 'methods)
+         (append (get-methods-helper (cdar parts))
+                 (get-methods-helper (cdr parts))))
+        (t (get-methods (cdr parts)))))
 
-	   
+;;; Estrae i metodi dalle parti della classe in modo ricorsivo
+(defun get-methods-helper (methods)
+  (if (null methods)
+      nil
+      (cons (process-method (caar methods) (cdar methods))
+            (get-methods-helper (cdr methods)))))
 
+;;; Restituisce il tipo del campo specificato
+(defun get-field-type (field fields-list)
+  (cond ((null fields-list) nil)
+        ((equal field (caar fields-list))
+         (if (is-class (cadr (cadar fields-list)))
+             (cadar fields-list)
+             (caddr (cadar fields-list))))
+        (t (get-field-type field (cdr fields-list)))))
 
-     
+;;; Verifica se una classe Ã¨ un sottotipo di un'altra
+(defun is-subtype-of (subclass parent-class)
+  (or (equal parent-class 'T)
+      (equal subclass parent-class)
+      (inherit-class (list subclass) parent-class)
+      (subtypep subclass parent-class)))
 
+;;;; Verifica se una classe Ã¨ ereditata da un'altra
+(defun inherit-class (inherited-class parent-class)
+  (or (and inherited-class
+           (equal (car inherited-class) parent-class))
+      (and inherited-class
+           (inherit-class (class-spec-parents (car inherited-class))
+                          parent-class))
+      (inherit-class (cdr inherited-class) parent-class)))
 
+;;; Ottiene il metodo da una delle classi genitore
+(defun parents-method (parents-list method-name)
+  (if (null parents-list)
+      nil
+      (if (has-method-in-class-spec (car parents-list) method-name)
+          (parents-method (class-spec-parents (car parents-list))
+			  method-name)
+          (parents-method (cdr parents-list) method-name))))
 
+;;; Verifica se una classe ha un certo metodo passandogli il nome
+(defun has-method-in-class-spec (class-spec method-name)
+  (extract-method method-name (class-spec-methods class-spec)))
 
-
-
-
-
-
-    
-  
-    
-  
-		      
-
-	 
-
-
-	 
-	
-	
-	
-	
-	
-	
-	
-	      
+;;; Estrae il corpo del metodo dalla lista dei metodi
+(defun extract-method (method-name methods-list)
+  (if (null methods-list)
+      nil
+      (if (equal method-name (caar methods-list))
+          (cadar methods-list)
+          (extract-method method-name (cdr methods-list)))))
